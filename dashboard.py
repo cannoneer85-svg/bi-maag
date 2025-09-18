@@ -259,8 +259,8 @@ def calc_delta_pct(current: float, previous: float) -> Optional[str]:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Fashion Retail Dashboard", layout="wide")
-    st.title("Дашборд fashion-ретейлера")
+    st.set_page_config(page_title="Дашборд MAAG", layout="wide")
+    st.title("Дашборд MAAG")
     st.caption("Синтетические данные за январь-март 2023 года")
 
     data = load_data()
