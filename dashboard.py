@@ -4,7 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from functools import lru_cache
-from typing import Dict
+from typing import Dict, Optional
 
 SOURCES = [
     "Organic",
@@ -181,7 +181,9 @@ def load_data() -> Dict[str, pd.DataFrame]:
     return _generate_datasets()
 
 
-def filter_by_dates(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp, date_col: str = "date") -> pd.DataFrame:
+def filter_by_dates(
+    df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp, date_col: str = "date"
+) -> pd.DataFrame:
     mask = (df[date_col] >= start) & (df[date_col] <= end)
     return df.loc[mask].copy()
 
@@ -194,10 +196,72 @@ def format_currency(value: float) -> str:
     return f"{value:,.0f}".replace(",", " ")
 
 
+def aggregate_metrics(df: pd.DataFrame) -> Dict[str, float]:
+    if df.empty:
+        return {
+            "orders": 0,
+            "revenue": 0.0,
+            "items": 0,
+            "visits": 0,
+            "users": 0,
+            "views": 0,
+            "avg_order_value": 0.0,
+            "avg_items_per_order": 0.0,
+            "avg_item_price": 0.0,
+            "overall_conversion": 0.0,
+            "avg_views_per_visit": 0.0,
+        }
+
+    orders = int(df["orders"].sum())
+    revenue = float(df["revenue"].sum())
+    items = int(df["items"].sum())
+    visits = int(df["visits"].sum())
+    users = int(df["users"].sum())
+    views = int(df["page_views"].sum())
+
+    avg_order_value = revenue / orders if orders else 0.0
+    avg_items_per_order = items / orders if orders else 0.0
+    avg_item_price = revenue / items if items else 0.0
+    overall_conversion = orders / visits * 100 if visits else 0.0
+    avg_views_per_visit = views / visits if visits else 0.0
+
+    return {
+        "orders": orders,
+        "revenue": revenue,
+        "items": items,
+        "visits": visits,
+        "users": users,
+        "views": views,
+        "avg_order_value": avg_order_value,
+        "avg_items_per_order": avg_items_per_order,
+        "avg_item_price": avg_item_price,
+        "overall_conversion": overall_conversion,
+        "avg_views_per_visit": avg_views_per_visit,
+    }
+
+
+def calc_delta_pct(current: float, previous: float) -> Optional[str]:
+    if previous is None:
+        return None
+    current_value = float(current)
+    previous_value = float(previous)
+
+    if not np.isfinite(current_value) or not np.isfinite(previous_value):
+        return None
+
+    if np.isclose(previous_value, 0.0):
+        if np.isclose(current_value, 0.0):
+            return "0.0%"
+        return None
+
+    delta_pct = (current_value - previous_value) / previous_value * 100
+    return f"{delta_pct:+.1f}%"
+
+
 def main() -> None:
-    st.set_page_config(page_title="Дашборд MAAG", layout="wide")
-    st.title("Дашборд MAAG")
-    st.caption("Синтетические данные за январь-март 2023 года.")
+    st.set_page_config(page_title="Fashion Retail Dashboard", layout="wide")
+    st.title("Дашборд fashion-ретейлера")
+    st.caption("Синтетические данные за январь-март 2023 года")
 
     data = load_data()
     base_df = data["base"]
@@ -239,30 +303,67 @@ def main() -> None:
         st.warning("За выбранный период данных нет.")
         st.stop()
 
-    total_orders = int(filtered["orders"].sum())
-    total_revenue = float(filtered["revenue"].sum())
-    total_items = int(filtered["items"].sum())
-    total_visits = int(filtered["visits"].sum())
-    total_users = int(filtered["users"].sum())
-    total_views = int(filtered["page_views"].sum())
+    period_days = (end_date - start_date).days + 1
+    previous_end = start_date - pd.Timedelta(days=1)
+    previous_start = previous_end - pd.Timedelta(days=period_days - 1)
+    previous_slice = filter_by_dates(base_df, previous_start, previous_end)
 
-    avg_order_value = total_revenue / total_orders if total_orders else 0
-    avg_items_per_order = total_items / total_orders if total_orders else 0
-    avg_item_price = total_revenue / total_items if total_items else 0
-    overall_conversion = total_orders / total_visits * 100 if total_visits else 0
-    avg_views_per_visit = total_views / total_visits if total_visits else 0
+    current_metrics = aggregate_metrics(filtered)
+    previous_metrics = aggregate_metrics(previous_slice)
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Количество заказов", format_int(total_orders))
-    col2.metric("Оборот, руб.", format_currency(total_revenue))
-    col3.metric("Средний чек, руб.", format_currency(avg_order_value))
-    col4.metric("Среднее количество товаров в заказе", f"{avg_items_per_order:.2f}")
+    col1.metric(
+        "Количество заказов",
+        format_int(current_metrics["orders"]),
+        calc_delta_pct(current_metrics["orders"], previous_metrics["orders"]),
+    )
+    col2.metric(
+        "Оборот, руб.",
+        format_currency(current_metrics["revenue"]),
+        calc_delta_pct(current_metrics["revenue"], previous_metrics["revenue"]),
+    )
+    col3.metric(
+        "Средний чек, руб.",
+        format_currency(current_metrics["avg_order_value"]),
+        calc_delta_pct(
+            current_metrics["avg_order_value"], previous_metrics["avg_order_value"]
+        ),
+    )
+    col4.metric(
+        "Среднее количество товаров в заказе",
+        f"{current_metrics['avg_items_per_order']:.2f}",
+        calc_delta_pct(
+            current_metrics["avg_items_per_order"],
+            previous_metrics["avg_items_per_order"],
+        ),
+    )
 
     col5, col6, col7, col8 = st.columns(4)
-    col5.metric("Средняя стоимость 1 товара, руб.", format_currency(avg_item_price))
-    col6.metric("Количество посещений", format_int(total_visits))
-    col7.metric("Количество пользователей", format_int(total_users))
-    col8.metric("Конверсия в заказ общая, %", f"{overall_conversion:.2f}")
+    col5.metric(
+        "Средняя стоимость 1 товара, руб.",
+        format_currency(current_metrics["avg_item_price"]),
+        calc_delta_pct(
+            current_metrics["avg_item_price"], previous_metrics["avg_item_price"]
+        ),
+    )
+    col6.metric(
+        "Количество посещений",
+        format_int(current_metrics["visits"]),
+        calc_delta_pct(current_metrics["visits"], previous_metrics["visits"]),
+    )
+    col7.metric(
+        "Количество пользователей",
+        format_int(current_metrics["users"]),
+        calc_delta_pct(current_metrics["users"], previous_metrics["users"]),
+    )
+    col8.metric(
+        "Конверсия в заказ общая, %",
+        f"{current_metrics['overall_conversion']:.2f}",
+        calc_delta_pct(
+            current_metrics["overall_conversion"],
+            previous_metrics["overall_conversion"],
+        ),
+    )
 
     orders_tab, traffic_tab, conversion_tab, funnel_tab, products_tab = st.tabs(
         [
@@ -367,12 +468,21 @@ def main() -> None:
         st.plotly_chart(fig_traffic, use_container_width=True)
 
         col_t1, col_t2, col_t3 = st.columns(3)
+        avg_views_per_visit = current_metrics["avg_views_per_visit"]
         col_t1.metric(
             "Среднее количество просмотров на посещение",
             f"{avg_views_per_visit:.2f}",
+            calc_delta_pct(
+                current_metrics["avg_views_per_visit"],
+                previous_metrics["avg_views_per_visit"],
+            ),
         )
-        col_t2.metric("Всего просмотров", format_int(total_views))
-        user_visit_ratio = total_users / total_visits * 100 if total_visits else 0
+        col_t2.metric("Всего просмотров", format_int(current_metrics["views"]))
+        user_visit_ratio = (
+            current_metrics["users"] / current_metrics["visits"] * 100
+            if current_metrics["visits"]
+            else 0
+        )
         col_t3.metric("Пользователи/посещения, %", f"{user_visit_ratio:.1f}")
 
     with conversion_tab:
