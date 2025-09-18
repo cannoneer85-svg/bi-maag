@@ -195,7 +195,7 @@ def format_currency(value: float) -> str:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Fashion Retail Dashboard", layout="wide")
+    st.set_page_config(page_title="Дашборд MAAG", layout="wide")
     st.title("Дашборд MAAG")
     st.caption("Синтетические данные за январь-март 2023 года")
 
